@@ -68,6 +68,7 @@ li.ref input{margin-top:5px;accent-color:var(--accent);width:16px;height:16px}
 .meta a.lk{color:var(--accent);font-weight:500}
 .meta a.pdfbtn{background:var(--oa);color:var(--panel);text-decoration:none;font-weight:700;border-radius:999px;padding:2px 12px;font-size:12px}
 .meta a.pdfbtn:hover{filter:brightness(1.1)}
+.meta .fnbtn{font:inherit;font-size:12px;border:1px solid var(--oa);color:var(--oa);background:transparent;border-radius:999px;padding:1px 10px;cursor:pointer}
 .mention{margin-top:6px;font-size:12.5px;color:var(--sub);border-left:2px solid var(--line);padding-left:10px}
 mark{background:var(--mark);color:inherit;padding:0 1px}
 .more{display:block;margin:18px auto;font:inherit;padding:8px 20px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
@@ -104,7 +105,7 @@ mark{background:var(--mark);color:inherit;padding:0 1px}
     <p class="ctx" id="ctx"></p>
     <ol class="list" id="list"></ol>
     <button class="more" id="more" hidden>さらに表示</button>
-    <p class="note">書誌は『国語科教育学研究の成果と展望Ⅱ』（2013）・『Ⅲ』（2022）の各節末「引用及び参考文献」を文字認識で読み取ったものです。誤読が残っていることがあります。所在はCiNii Research・J-STAGE・各大学の機関リポジトリで調べました。「無料PDF」は公開元のページに案内しています。</p>
+    <p class="note">書誌は『国語科教育学研究の成果と展望Ⅱ』（2013）・『Ⅲ』（2022）の各節末「引用及び参考文献」を文字認識で読み取ったものです。誤読が残っていることがあります。「PDFを開く」で開いたPDFを保存するときは、「ファイル名をコピー」で書誌の形の名前（著者（年）「題」『誌名』巻号.pdf）を写して、保存の画面で名前の欄に貼り付けてください。所在はCiNii Research・J-STAGE・各大学の機関リポジトリで調べました。「無料PDF」は公開元のページに案内しています。</p>
   </main>
 </div>
 </div>
@@ -127,6 +128,23 @@ const norm = s => (s || "").normalize("NFKC").toLowerCase().replace(/[\s「」�
 REFS.forEach(r => r._h = norm([r.a.join(" "), r.t, r.c, r.p, r.raw, r.m, r.y].join(" ")));
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ROM = "ⅠⅡⅢⅣⅤⅥⅦⅧ";
+
+
+// 保存するときのファイル名（Mac側の seika.py filename と同じ規則）: 著者（年）「題」『誌名』巻号.pdf
+const FW = {"/":"／","\\":"＼",":":"：","*":"＊","?":"？",'"':"”","<":"＜",">":"＞","|":"｜"};
+function fileName(r) {
+  const au = (r.a.slice(0, 3).join("・") + (r.a.length > 3 ? "他" : "")) || "著者不明";
+  const build = t => (`${au}（${r.y || "刊年不明"}）「${t}」${r.c || ""}`).replace(/[\/\\:*?"<>|\n]/g, c => FW[c] || " ").trim() + ".pdf";
+  let t = r.t || "", name = build(t);
+  const bytes = s => new TextEncoder().encode(s).length;
+  while (bytes(name) > 240 && t.length > 10) { t = t.slice(0, -2); name = build(t + "…"); }
+  return name;
+}
+function copyText(text, btn, label) {
+  const done = () => { btn.textContent = "コピーしました"; setTimeout(() => btn.textContent = label, 1600); };
+  const fail = () => { btn.textContent = "コピーできませんでした"; btn.title = text; setTimeout(() => btn.textContent = label, 2500); };
+  try { navigator.clipboard.writeText(text).then(done, fail); } catch (e) { fail(); }
+}
 
 function stats() {
   const rs = REFS.filter(r => r.b === st.book);
@@ -160,7 +178,7 @@ function item(r, ws) {
   const c = chByKey[r.b + "|" + r.ch];
   const pill = r.s === "oa" ? `<span class="pill oa">無料PDF</span>` : r.s === "found" ? `<span class="pill found">所在あり</span>` : `<span class="pill none">所在未確認</span>`;
   const links = [];
-  if (r.s === "oa" && r.pdf) links.push(`<a class="pdfbtn" href="${esc(r.pdf)}" target="_blank" rel="noopener">PDFを開く</a>`);
+  if (r.s === "oa" && r.pdf) links.push(`<a class="pdfbtn" href="${esc(r.pdf)}" target="_blank" rel="noopener">PDFを開く</a><button class="fnbtn" data-fn="${r.id}" title="${esc(fileName(r))}">ファイル名をコピー</button>`);
   if (r.w) links.push(`<a class="lk" href="${esc(r.w)}" target="_blank" rel="noopener">公開ページ</a>`);
   if (r.ci) links.push(`<a class="lk" href="${esc(r.ci)}" target="_blank" rel="noopener">CiNii</a>`);
   if (r.nd) links.push(`<a class="lk" href="${esc(r.nd)}" target="_blank" rel="noopener">国会図書館</a>`);
@@ -182,6 +200,7 @@ function render(full) {
   $("list").innerHTML = rs.length ? rs.slice(0, st.shown).map(r => item(r, ws)).join("") : `<li class="empty">見つかりませんでした。語を減らすか、Ⅱ／Ⅲを切り替えてみてください。</li>`;
   $("more").hidden = rs.length <= st.shown;
   $("list").querySelectorAll("input[data-id]").forEach(i => i.onchange = () => { i.checked ? st.sel.add(i.dataset.id) : st.sel.delete(i.dataset.id); save(); tray(); });
+  $("list").querySelectorAll(".fnbtn").forEach(b => b.onclick = () => { const r = REFS.find(x => x.id === b.dataset.fn); copyText(fileName(r), b, "ファイル名をコピー"); });
   $("list").querySelectorAll(".chap").forEach(b => b.onclick = () => { st.chap = b.dataset.c; st.shown = 60; render(true); window.scrollTo({top: 0}); });
   tray();
 }
